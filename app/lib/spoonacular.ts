@@ -118,7 +118,8 @@ export async function searchRecipes(
   offset: number = 0,
   limit: number = 12,
   mealType?: string,
-  diet?: string
+  diet?: string,
+  excludeIngredients?: string
 ): Promise<SearchRecipesResponse> {
   if (!API_KEY) {
     console.error('Spoonacular API key is not set');
@@ -136,6 +137,10 @@ export async function searchRecipes(
 
     if (diet) {
       url += `&diet=${diet}`;
+    }
+
+    if (excludeIngredients) {
+      url += `&excludeIngredients=${encodeURIComponent(excludeIngredients)}`;
     }
 
     const response = await fetch(url);
@@ -177,5 +182,54 @@ export async function getRecipeDetails(id: number): Promise<Recipe | null> {
   } catch (error) {
     console.error('Error fetching recipe details:', error);
     return null;
+  }
+}
+
+export async function getRandomRecipe(): Promise<Recipe | null> {
+  if (!API_KEY) {
+    console.error('Spoonacular API key is not set');
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.spoonacular.com/recipes/random?apiKey=${API_KEY}&number=1&addRecipeNutrition=true`
+    );
+
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.recipes[0];
+  } catch (error) {
+    console.error('Error fetching random recipe:', error);
+    return null;
+  }
+}
+
+export async function findRecipesByIngredients(
+  ingredients: string[],
+  number: number = 5
+): Promise<Recipe[]> {
+  if (!API_KEY) {
+    console.error('Spoonacular API key is not set');
+    return [];
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.spoonacular.com/recipes/findByIngredients?apiKey=${API_KEY}&ingredients=${ingredients.join(',')}&number=${number}&addRecipeNutrition=true`
+    );
+
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error finding recipes by ingredients:', error);
+    return [];
   }
 }

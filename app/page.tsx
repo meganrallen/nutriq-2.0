@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useMealPlanStore, DayOfWeek, MealType } from './lib/store';
-import { Recipe } from './lib/spoonacular';
+import { Recipe, getRandomRecipe } from './lib/spoonacular';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 
@@ -13,18 +13,78 @@ export default function HomePage() {
   const todaysMeals = mealPlan[today] || {};
 
   const [greeting, setGreeting] = useState('');
+  const [recipeOfTheDay, setRecipeOfTheDay] = useState<Recipe | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const hour = new Date().getHours();
     if (hour < 12) setGreeting('Good morning');
     else if (hour < 18) setGreeting('Good afternoon');
     else setGreeting('Good evening');
+
+    const fetchRecipeOfTheDay = async () => {
+      try {
+        const recipe = await getRandomRecipe();
+        setRecipeOfTheDay(recipe);
+      } catch (error) {
+        console.error('Error fetching recipe of the day:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRecipeOfTheDay();
   }, []);
 
   return (
     <div className="max-w-4xl mx-auto">
       <h1 className="text-3xl font-bold mb-6">{greeting}!</h1>
       
+      {/* Recipe of the Day Section */}
+      <section className="mb-8">
+        <h2 className="text-xl font-semibold mb-4">Recipe of the Day</h2>
+        {loading ? (
+          <div className="bg-white rounded-lg shadow p-6 text-center">
+            <div className="animate-pulse flex space-x-4">
+              <div className="flex-1 space-y-4 py-1">
+                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                <div className="space-y-2">
+                  <div className="h-4 bg-gray-200 rounded"></div>
+                  <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : recipeOfTheDay ? (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="relative h-48">
+              <Image
+                src={recipeOfTheDay.image}
+                alt={recipeOfTheDay.title}
+                fill
+                className="object-cover"
+              />
+            </div>
+            <div className="p-4">
+              <h3 className="text-lg font-semibold mb-2">{recipeOfTheDay.title}</h3>
+              <p className="text-gray-600 text-sm mb-4">
+                Ready in {recipeOfTheDay.readyInMinutes} minutes • {recipeOfTheDay.servings} servings
+              </p>
+              <button
+                onClick={() => router.push(`/recipe/${recipeOfTheDay.id}`)}
+                className="w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600 transition-colors"
+              >
+                View Recipe
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow p-6 text-center">
+            <p className="text-gray-500">Unable to load recipe of the day</p>
+          </div>
+        )}
+      </section>
+
       <section className="mb-8">
         <h2 className="text-xl font-semibold mb-4">Today's Meals</h2>
         {Object.entries(todaysMeals).length > 0 ? (

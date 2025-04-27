@@ -21,8 +21,8 @@ export default function MealPlanner() {
 
     setLoading(true);
     try {
-      const results = await searchRecipes(searchQuery);
-      setSearchResults(results);
+      const response = await searchRecipes(searchQuery);
+      setSearchResults(response.results);
     } catch (error) {
       console.error('Error searching recipes:', error);
     } finally {
@@ -114,7 +114,7 @@ export default function MealPlanner() {
                 <RecipeCard
                   key={recipe.id}
                   recipe={recipe}
-                  onClick={handleRecipeSelect}
+                  onClick={() => handleRecipeSelect(recipe)}
                 />
               ))}
             </div>

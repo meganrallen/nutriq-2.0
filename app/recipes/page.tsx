@@ -4,15 +4,30 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { Recipe, searchRecipes } from '../lib/spoonacular';
 import RecipeCard from '../components/RecipeCard';
 import RecipeDetail from '../components/RecipeDetail';
+import { useRouter } from 'next/navigation';
+
+// Debounce utility
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
 
 const CATEGORIES = {
   byDiet: [
-    { id: 'all', label: 'All Recipes', value: '' },
     { id: 'vegetarian', label: 'Vegetarian', value: 'vegetarian' },
     { id: 'vegan', label: 'Vegan', value: 'vegan' },
     { id: 'gluten-free', label: 'Gluten Free', value: 'gluten-free' },
     { id: 'dairy-free', label: 'Dairy Free', value: 'dairy-free' },
-    { id: 'low-sugar', label: 'Low Sugar', value: 'low-sugar' },
+    { id: 'sugar-free', label: 'Sugar Free', value: 'sugar-free' },
+    { id: 'paleo', label: 'Paleo', value: 'paleo' },
+    { id: 'keto', label: 'Keto', value: 'ketogenic' },
+    { id: 'fodmap', label: 'FODMAP', value: 'fodmap' },
+    { id: 'whole30', label: 'Whole30', value: 'whole30' },
+    { id: 'mediterranean', label: 'Mediterranean', value: 'mediterranean' },
   ],
   byMeal: [
     { id: 'breakfast', label: 'Breakfast', value: 'breakfast' },
@@ -21,14 +36,10 @@ const CATEGORIES = {
     { id: 'snack', label: 'Snacks', value: 'snack' },
     { id: 'dessert', label: 'Desserts', value: 'dessert' },
   ],
-  byIngredients: [
-    { id: 'meat', label: 'Meat', value: 'meat' },
-    { id: 'fish', label: 'Fish', value: 'fish' },
-    { id: 'vegetables', label: 'Vegetables', value: 'vegetables' },
-    { id: 'grains', label: 'Grains & Pulses', value: 'grains' },
-    { id: 'dairy', label: 'Dairy', value: 'dairy' },
-  ],
 };
+
+// In-memory cache for search results
+const searchCache = new Map<string, Recipe[]>();
 
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -36,29 +47,55 @@ export default function RecipesPage() {
   const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDiet, setSelectedDiet] = useState('');
-  const [selectedMealType, setSelectedMealType] = useState('');
+  const [selectedDiets, setSelectedDiets] = useState<string[]>([]);
+  const [selectedMealTypes, setSelectedMealTypes] = useState<string[]>([]);
+  const [excludedIngredients, setExcludedIngredients] = useState<string[]>([]);
+  const [currentIngredient, setCurrentIngredient] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [apiQuotaExceeded, setApiQuotaExceeded] = useState(false);
   const observer = useRef<IntersectionObserver | null>(null);
+  const router = useRouter();
+
+  // Only list view, no grid/list toggle
+  // Load 10 recipes at a time
+  const RECIPES_PER_PAGE = 10;
+
+  // Load recipes on mount and when filters change
+  useEffect(() => {
+    loadRecipes(true);
+    // eslint-disable-next-line
+  }, [selectedDiets, selectedMealTypes]);
 
   const loadRecipes = async (reset: boolean = false) => {
-    if (isLoading || (!hasMore && !reset)) return;
-
+    if (isLoading || (!hasMore && !reset) || apiQuotaExceeded) return;
     setIsLoading(true);
     try {
       const newOffset = reset ? 0 : offset;
-      const response = await searchRecipes(searchQuery, newOffset, 12, selectedMealType, selectedDiet);
+      // Use selected filters for diet and meal type
+      const diet = selectedDiets.join(',');
+      const mealType = selectedMealTypes.join(',');
+      const response = await searchRecipes(
+        '',
+        newOffset,
+        RECIPES_PER_PAGE,
+        mealType,
+        diet,
+        ''
+      );
       setRecipes(prev => reset ? response.results : [...prev, ...response.results]);
       setOffset(newOffset + response.number);
       setHasMore(response.totalResults > newOffset + response.number);
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.message?.includes('402')) {
+        setApiQuotaExceeded(true);
+      }
       console.error('Error loading recipes:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Infinite scroll: load more when last recipe is visible
   const lastRecipeRef = useCallback((node: HTMLDivElement) => {
     if (isLoading) return;
     if (observer.current) observer.current.disconnect();
@@ -70,44 +107,51 @@ export default function RecipesPage() {
     if (node) observer.current.observe(node);
   }, [isLoading, hasMore]);
 
-  useEffect(() => {
-    loadRecipes(true);
-  }, [selectedDiet, selectedMealType]);
+  const handleDietChange = (diet: string) => {
+    setSelectedDiets(prev => 
+      prev.includes(diet) 
+        ? prev.filter(d => d !== diet)
+        : [...prev, diet]
+    );
+  };
 
-  const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    loadRecipes(true);
+  const handleMealTypeChange = (mealType: string) => {
+    setSelectedMealTypes(prev =>
+      prev.includes(mealType)
+        ? prev.filter(m => m !== mealType)
+        : [...prev, mealType]
+    );
+  };
+
+  const handleIngredientKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && currentIngredient.trim()) {
+      e.preventDefault();
+      setExcludedIngredients(prev => [...prev, currentIngredient.trim()]);
+      setCurrentIngredient('');
+    }
+  };
+
+  const removeIngredient = (ingredient: string) => {
+    setExcludedIngredients(prev => prev.filter(i => i !== ingredient));
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex gap-8">
+      <div className="max-w-7xl mx-auto px-8 py-12">
+        <div className="flex gap-0">
           {/* Sidebar */}
-          <div className="w-64 flex-shrink-0">
-            <div className="bg-white rounded-lg shadow-sm p-6 sticky top-20">
-              {/* Search */}
-              <form onSubmit={handleSearch} className="mb-6">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search recipes..."
-                  className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </form>
-
+          <aside className="w-80 flex-shrink-0 pr-0">
+            <div className="bg-navy-900 rounded-xl shadow-lg p-8 sticky top-20 text-white flex flex-col gap-10 h-fit min-h-[80vh]">
               {/* Diet Filters */}
-              <div className="mb-6">
-                <h3 className="font-semibold mb-3">Diet</h3>
-                <div className="space-y-2">
+              <div>
+                <h3 className="font-semibold mb-2 text-lg">Diet</h3>
+                <div className="flex flex-col gap-2">
                   {CATEGORIES.byDiet.map((diet) => (
-                    <label key={diet.id} className="flex items-center">
+                    <label key={diet.id} className="flex items-center gap-2">
                       <input
-                        type="radio"
-                        name="diet"
-                        checked={selectedDiet === diet.value}
-                        onChange={() => setSelectedDiet(diet.value)}
+                        type="checkbox"
+                        checked={selectedDiets.includes(diet.value)}
+                        onChange={() => handleDietChange(diet.value)}
                         className="mr-2"
                       />
                       <span className="text-sm">{diet.label}</span>
@@ -115,18 +159,16 @@ export default function RecipesPage() {
                   ))}
                 </div>
               </div>
-
               {/* Meal Type Filters */}
-              <div className="mb-6">
-                <h3 className="font-semibold mb-3">Meal Type</h3>
-                <div className="space-y-2">
+              <div>
+                <h3 className="font-semibold mb-2 text-lg mt-6">Meal Type</h3>
+                <div className="flex flex-col gap-2">
                   {CATEGORIES.byMeal.map((meal) => (
-                    <label key={meal.id} className="flex items-center">
+                    <label key={meal.id} className="flex items-center gap-2">
                       <input
-                        type="radio"
-                        name="mealType"
-                        checked={selectedMealType === meal.value}
-                        onChange={() => setSelectedMealType(meal.value)}
+                        type="checkbox"
+                        checked={selectedMealTypes.includes(meal.value)}
+                        onChange={() => handleMealTypeChange(meal.value)}
                         className="mr-2"
                       />
                       <span className="text-sm">{meal.label}</span>
@@ -134,77 +176,38 @@ export default function RecipesPage() {
                   ))}
                 </div>
               </div>
-
-              {/* Ingredient Filters */}
-              <div className="mb-6">
-                <h3 className="font-semibold mb-3">Main Ingredient</h3>
-                <div className="space-y-2">
-                  {CATEGORIES.byIngredients.map((ingredient) => (
-                    <label key={ingredient.id} className="flex items-center">
-                      <input
-                        type="checkbox"
-                        className="mr-2"
-                      />
-                      <span className="text-sm">{ingredient.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
             </div>
-          </div>
+          </aside>
 
           {/* Main Content */}
           <div className="flex-1">
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold">Recipes</h1>
-                <div className="flex items-center gap-4">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setViewMode('grid')}
-                      className={`p-2 rounded ${viewMode === 'grid' ? 'bg-gray-100' : ''}`}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => setViewMode('list')}
-                      className={`p-2 rounded ${viewMode === 'list' ? 'bg-gray-100' : ''}`}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                      </svg>
-                    </button>
-                  </div>
+            <h1 className="text-3xl font-bold mb-6">Recipes</h1>
+            <div className="flex flex-col gap-2">
+              {recipes.map((recipe, index) => (
+                <div
+                  key={`${recipe.id}-${index}`}
+                  ref={index === recipes.length - 1 ? lastRecipeRef : undefined}
+                >
+                  <RecipeCard
+                    recipe={recipe}
+                    onClick={() => router.push(`/recipe/${recipe.id}`)}
+                    viewMode="list"
+                    showMacrosPerServing={true}
+                    compact={true}
+                  />
                 </div>
-              </div>
-
-              <div className={`${
-                viewMode === 'grid' 
-                  ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
-                  : 'space-y-4'
-              }`}>
-                {recipes.map((recipe, index) => (
-                  <div
-                    key={`${recipe.id}-${index}`}
-                    ref={index === recipes.length - 1 ? lastRecipeRef : undefined}
-                  >
-                    <RecipeCard
-                      recipe={recipe}
-                      onClick={() => setSelectedRecipe(recipe)}
-                      viewMode={viewMode}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {isLoading && (
-                <div className="text-center py-4">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent"></div>
-                </div>
-              )}
+              ))}
             </div>
+            {isLoading && (
+              <div className="text-center py-8">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent"></div>
+              </div>
+            )}
+            {apiQuotaExceeded && (
+              <div className="text-red-500 text-center mt-4">
+                API quota exceeded. Please try again tomorrow or upgrade your Spoonacular plan.
+              </div>
+            )}
           </div>
         </div>
       </div>

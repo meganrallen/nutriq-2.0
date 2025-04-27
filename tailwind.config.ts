@@ -11,6 +11,12 @@ const config: Config = {
       fontFamily: {
         lato: ['var(--font-lato)', 'sans-serif'],
       },
+      colors: {
+        navy: {
+          800: '#1a365d',
+          900: '#0f2942',
+        },
+      },
     },
   },
   plugins: [],

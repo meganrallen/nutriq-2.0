@@ -11,10 +11,13 @@ export default function RecipePage({ params }: { params: { id: string } }) {
   const [imageError, setImageError] = useState(false);
   const router = useRouter();
 
+  // New: Track if we've tried refetching nutrition
+  const [triedRefetch, setTriedRefetch] = useState(false);
+
   useEffect(() => {
     const fetchRecipe = async () => {
       try {
-        const details = await getRecipeDetails(parseInt(params.id));
+        const details = await getRecipeDetails(parseInt(params.id)) as RecipeDetailType;
         setRecipe(details);
       } catch (error) {
         console.error('Error fetching recipe:', error);
@@ -25,6 +28,22 @@ export default function RecipePage({ params }: { params: { id: string } }) {
 
     fetchRecipe();
   }, [params.id]);
+
+  // New: Refetch if macros are zero and we haven't tried yet
+  useEffect(() => {
+    if (
+      recipe &&
+      !triedRefetch &&
+      recipe.nutrition &&
+      recipe.nutrition.nutrients &&
+      recipe.nutrition.nutrients.every(n => n.amount === 0)
+    ) {
+      setTriedRefetch(true);
+      getRecipeDetails(recipe.id).then((details) => {
+        if (details) setRecipe(details as RecipeDetailType);
+      });
+    }
+  }, [recipe, triedRefetch]);
 
   if (loading) {
     return (
@@ -56,6 +75,17 @@ export default function RecipePage({ params }: { params: { id: string } }) {
   const carbsPerServing = Math.round((recipe.nutrition?.nutrients?.find(n => n.name === 'Carbohydrates')?.amount || 0) / recipe.servings);
   const fatPerServing = Math.round((recipe.nutrition?.nutrients?.find(n => n.name === 'Fat')?.amount || 0) / recipe.servings);
 
+  // Helper: Parse instructions as a list
+  let steps: string[] = [];
+  if (recipe.analyzedInstructions && recipe.analyzedInstructions[0]?.steps?.length) {
+    steps = recipe.analyzedInstructions[0].steps.flatMap(s =>
+      s.step.split(/[\n\r\.;]+/).map(sub => sub.trim()).filter(Boolean)
+    );
+  } else if (typeof recipe.instructions === 'string' && recipe.instructions.trim()) {
+    // Split by line, period, or semicolon for fallback
+    steps = recipe.instructions.split(/[\n\r\.;]+/).map(s => s.trim()).filter(Boolean);
+  }
+
   return (
     <div className="min-h-screen p-8">
       <div className="max-w-4xl mx-auto">
@@ -67,7 +97,7 @@ export default function RecipePage({ params }: { params: { id: string } }) {
         </button>
 
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-          <div className="relative aspect-[16/9] w-full bg-gray-100">
+          <div className="relative w-full max-w-3xl mx-auto aspect-[16/9] bg-gray-100">
             {!imageError ? (
               <Image
                 src={recipe.image}
@@ -76,7 +106,8 @@ export default function RecipePage({ params }: { params: { id: string } }) {
                 priority
                 quality={90}
                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px"
-                className="object-cover"
+                className="object-cover rounded-t-lg"
+                style={{ objectFit: 'cover' }}
                 onError={() => setImageError(true)}
               />
             ) : (
@@ -143,7 +174,7 @@ export default function RecipePage({ params }: { params: { id: string } }) {
               <h2 className="text-2xl font-semibold mb-4">Ingredients</h2>
               <p className="text-sm text-gray-600 mb-4">For {recipe.servings} servings:</p>
               <ul className="grid grid-cols-1 gap-3">
-                {recipe.extendedIngredients.map((ingredient, index) => (
+                {recipe.extendedIngredients?.map((ingredient, index) => (
                   <li 
                     key={`${recipe.id}-ingredient-${index}`}
                     className="flex items-start gap-3"
@@ -157,18 +188,10 @@ export default function RecipePage({ params }: { params: { id: string } }) {
 
             <div>
               <h2 className="text-2xl font-semibold mb-4">Instructions</h2>
-              {recipe.analyzedInstructions[0]?.steps.length > 0 ? (
-                <ol className="space-y-4">
-                  {recipe.analyzedInstructions[0].steps.map((step) => (
-                    <li 
-                      key={`${recipe.id}-step-${step.number}`}
-                      className="flex gap-4"
-                    >
-                      <span className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center flex-shrink-0">
-                        {step.number}
-                      </span>
-                      <p className="flex-1">{step.step}</p>
-                    </li>
+              {steps.length > 0 ? (
+                <ol className="space-y-4 list-decimal list-inside">
+                  {steps.map((step, idx) => (
+                    <li key={idx} className="text-gray-700">{step}</li>
                   ))}
                 </ol>
               ) : (
