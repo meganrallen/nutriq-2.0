@@ -2,6 +2,7 @@
 
 import './globals.css';
 import Navigation from './components/Navigation';
+import BottomNav from './components/BottomNav';
 import { useEffect } from 'react';
 
 export default function RootLayout({
@@ -28,9 +29,10 @@ export default function RootLayout({
       </head>
       <body className="min-h-[100vh] min-h-[calc(var(--vh,1vh)*100)] bg-gray-50">
         <Navigation />
-        <main className="pt-20 px-4">
+        <main className="pt-20 pb-20 px-4">
           {children}
         </main>
+        <BottomNav />
       </body>
     </html>
   );

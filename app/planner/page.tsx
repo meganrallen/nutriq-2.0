@@ -9,7 +9,7 @@ const DAYS: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday
 const MEALS: MealType[] = ['breakfast', 'lunch', 'dinner'];
 
 export default function MealPlanner() {
-  const { mealPlan, setMeal, clearMealPlan } = useMealPlanStore();
+  const { mealPlan, setMeal, clearMealPlan, isGenerating } = useMealPlanStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(false);
@@ -44,12 +44,20 @@ export default function MealPlanner() {
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold">Meal Planner</h1>
-          <button
-            onClick={clearMealPlan}
-            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-          >
-            Clear Plan
-          </button>
+          <div className="flex gap-4">
+            {isGenerating && (
+              <div className="flex items-center gap-2 text-blue-600">
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent"></div>
+                <span>Generating meal plan...</span>
+              </div>
+            )}
+            <button
+              onClick={clearMealPlan}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              Clear Plan
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-7 gap-4 mb-8">

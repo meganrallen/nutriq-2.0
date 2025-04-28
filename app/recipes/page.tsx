@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Recipe, searchRecipes } from '../lib/spoonacular';
+import { Recipe, searchRecipes, getHealthyRecipes } from '../lib/spoonacular';
 import RecipeCard from '../components/RecipeCard';
 import RecipeDetail from '../components/RecipeDetail';
 import { useRouter } from 'next/navigation';
@@ -72,15 +72,11 @@ export default function RecipesPage() {
     try {
       const newOffset = reset ? 0 : offset;
       // Use selected filters for diet and meal type
-      const diet = selectedDiets.join(',');
       const mealType = selectedMealTypes.join(',');
-      const response = await searchRecipes(
-        '',
+      const response = await getHealthyRecipes(
         newOffset,
         RECIPES_PER_PAGE,
-        mealType,
-        diet,
-        ''
+        mealType
       );
       setRecipes(prev => reset ? response.results : [...prev, ...response.results]);
       setOffset(newOffset + response.number);

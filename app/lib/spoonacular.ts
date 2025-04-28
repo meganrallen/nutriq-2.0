@@ -70,6 +70,9 @@ export interface DietaryFilters {
   excludeIngredients?: string[];
   includeIngredients?: string[];
   mealType?: string;
+  maxSugar?: number;
+  maxFat?: number;
+  minFiber?: number;
 }
 
 export const DIETARY_OPTIONS = {
@@ -119,7 +122,8 @@ export async function searchRecipes(
   limit: number = 12,
   mealType?: string,
   diet?: string,
-  excludeIngredients?: string
+  excludeIngredients?: string,
+  filters?: DietaryFilters
 ): Promise<SearchRecipesResponse> {
   if (!API_KEY) {
     console.error('Spoonacular API key is not set');
@@ -143,6 +147,25 @@ export async function searchRecipes(
       url += `&excludeIngredients=${encodeURIComponent(excludeIngredients)}`;
     }
 
+    // Add health-related filters
+    if (filters) {
+      if (filters.maxCalories) {
+        url += `&maxCalories=${filters.maxCalories}`;
+      }
+      if (filters.minProtein) {
+        url += `&minProtein=${filters.minProtein}`;
+      }
+      if (filters.maxSugar) {
+        url += `&maxSugar=${filters.maxSugar}`;
+      }
+      if (filters.maxFat) {
+        url += `&maxFat=${filters.maxFat}`;
+      }
+      if (filters.minFiber) {
+        url += `&minFiber=${filters.minFiber}`;
+      }
+    }
+
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -160,6 +183,22 @@ export async function searchRecipes(
     console.error('Error searching recipes:', error);
     return { results: [], offset: 0, number: 0, totalResults: 0 };
   }
+}
+
+export async function getHealthyRecipes(
+  offset: number = 0,
+  limit: number = 12,
+  mealType?: string
+): Promise<SearchRecipesResponse> {
+  const healthyFilters: DietaryFilters = {
+    maxCalories: 600,
+    minProtein: 15,
+    maxSugar: 20,
+    maxFat: 30,
+    minFiber: 5
+  };
+
+  return searchRecipes('', offset, limit, mealType, undefined, undefined, healthyFilters);
 }
 
 export async function getRecipeDetails(id: number): Promise<Recipe | null> {
